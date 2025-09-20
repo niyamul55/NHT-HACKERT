@@ -1,0 +1,213 @@
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini CMS - Friendly UI</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');body { font-family: 'Share Tech Mono', monospace; margin: 0; padding: 0; background: #f0f4f8; color: #333; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding-top: 40px; }
+
+.container { background: #fff; border: 1px solid #ccc; padding: 30px 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 90%; max-width: 400px; text-align: center; margin-bottom: 20px; }
+
+h2 { margin-bottom: 20px; color: #333; } input, textarea { width: 100%; padding: 10px; margin: 8px 0; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; color: #333; outline: none; font-family: 'Share Tech Mono', monospace; } button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 6px; font-weight: bold; color: #fff; background: #4CAF50; cursor: pointer; transition: 0.3s; } button:hover { background: #45a049; } .toggle-link { margin-top: 10px; display: block; color: #4CAF50; cursor: pointer; text-decoration: underline; } .card { background: #fafafa; border: 1px solid #ccc; padding: 12px; margin: 12px 0; border-radius: 8px; text-align: left; } .post img, .post video { max-width: 100%; border-radius: 4px; margin-top: 6px; cursor: grab; } .comment-section { margin-top: 10px; border-top: 1px solid #ddd; padding-top: 6px; } .comment { margin-bottom: 6px; padding: 4px; border-bottom: 1px dashed #ddd; } .like-btn { margin-top: 6px; display: inline-block; cursor: pointer; text-decoration: underline; color: #4CAF50; } .logout-btn { background: #f44336; margin-top: 10px; } .logout-btn:hover { background: #e53935; } .hidden { display: none; } .dark-mode { background: #1e1e1e; color: #f0f0f0; } .dark-mode .container { background: #2b2b2b; border: 1px solid #555; } .dark-mode input, .dark-mode textarea { background: #3a3a3a; color: #f0f0f0; border: 1px solid #555; } .dark-mode button { background: #4CAF50; color: #fff; } </style>
+
+</head>
+<body><div class="container" id="authContainer">
+  <h2 id="formTitle">Login</h2>
+  <input type="text" id="userName" placeholder="Username or Email">
+  <input type="password" id="password" placeholder="Password">
+  <button onclick="submitForm()">Login</button>
+  <span class="toggle-link" onclick="toggleForm()">Don't have an account? Sign Up</span>
+</div><div class="container hidden" id="adminPanel">
+  <h2>Admin Panel</h2>
+  <button class="logout-btn" onclick="logout()">Logout</button>
+  <input type="text" id="postTitle" placeholder="Post Title">
+  <textarea id="postContent" placeholder="Post Content"></textarea>
+  <input type="file" id="postFile" multiple>
+  <button onclick="createPostFirebase()">Create Post</button>
+  <h3>Existing Posts</h3>
+  <div id="posts"></div>
+</div><div class="container hidden" id="userPanel">
+  <h2>Welcome <span id="userNameDisplay"></span></h2>
+  <button class="logout-btn" onclick="logout()">Logout</button>
+  <div id="userPosts"></div>  <div class="contact-form">
+    <h3>Contact Us</h3>
+    <form id="contactForm" action="https://formspree.io/f/xandkpee" method="POST">
+      <input type="text" name="name" placeholder="Your Name" required>
+      <input type="email" name="_replyto" placeholder="Your Email" required>
+      <textarea name="message" placeholder="Your Message" required></textarea>
+      <button type="submit">Send</button>
+    </form>
+    <p id="formStatus"></p>
+  </div>
+  <button onclick="toggleDarkMode()">Toggle Dark Mode</button>
+</div><script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCQ9CJt_M68erwnIr3X_UunwACytOVpWC0",
+  authDomain: "my-app-niyam.firebaseapp.com",
+  projectId: "my-app-niyam",
+  storageBucket: "my-app-niyam.appspot.com",
+  messagingSenderId: "1042170820584",
+  appId: "1:1042170820584:web:72eda8ee7ffa8b62f7165d"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+let currentUser = null;
+let isLogin = true;
+
+function toggleForm() {
+  isLogin = !isLogin;
+  document.getElementById('formTitle').innerText = isLogin ? 'Login' : 'Sign Up';
+  document.querySelector('#authContainer button').innerText = isLogin ? 'Login' : 'Sign Up';
+  document.querySelector('.toggle-link').innerText = isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login";
+  document.getElementById('userName').value = '';
+  document.getElementById('password').value = '';
+}
+
+async function submitForm() {
+  const u = document.getElementById('userName').value.trim();
+  const p = document.getElementById('password').value;
+  if (isLogin) {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, u, p);
+      currentUser = userCredential.user;
+      showUserPanel();
+    } catch (e) { alert(e.message); }
+  } else {
+    try {
+      await createUserWithEmailAndPassword(auth, u, p);
+      alert('Sign Up Successful');
+      toggleForm();
+    } catch (e) { alert(e.message); }
+  }
+}
+
+function logout() {
+  signOut(auth).then(() => {
+    currentUser = null;
+    document.getElementById('authContainer').classList.remove('hidden');
+    document.getElementById('adminPanel').classList.add('hidden');
+    document.getElementById('userPanel').classList.add('hidden');
+    document.getElementById('userName').value = '';
+    document.getElementById('password').value = '';
+  });
+}
+
+function showUserPanel() {
+  document.getElementById('authContainer').classList.add('hidden');
+  document.getElementById('userPanel').classList.remove('hidden');
+  document.getElementById('userNameDisplay').innerText = currentUser.email;
+  loadPostsFirebase();
+}
+
+async function createPostFirebase() {
+  const title = document.getElementById('postTitle').value;
+  const content = document.getElementById('postContent').value;
+  const fileInput = document.getElementById('postFile');
+  let fileURLs = [];
+
+  for (let i = 0; i < fileInput.files.length; i++) {
+    const file = fileInput.files[i];
+    const storageRef = ref(storage, 'posts/' + Date.now() + '_' + file.name);
+    await uploadBytes(storageRef, file);
+    fileURLs.push(await getDownloadURL(storageRef));
+  }
+
+  await addDoc(collection(db, 'posts'), {
+    title,
+    content,
+    files: fileURLs,
+    timestamp: Date.now(),
+    likes: [],
+    comments: []
+  });
+
+  loadPostsFirebase();
+}
+
+async function loadPostsFirebase() {
+  const userPostsDiv = document.getElementById('userPosts');
+  userPostsDiv.innerHTML = '';
+
+  const q = query(collection(db, 'posts'), orderBy('timestamp', 'desc'));
+  const snapshot = await getDocs(q);
+
+  snapshot.forEach(docSnap => {
+    const p = docSnap.data();
+    const div = document.createElement('div');
+    div.className = 'card post';
+    div.innerHTML = `<h4>${p.title}</h4><p>${p.content}</p>`;
+
+    if (p.files) {
+      p.files.forEach(f => {
+        if (f.endsWith('.mp4')) div.innerHTML += `<video src='${f}' controls style='width:100%'></video>`;
+        else div.innerHTML += `<img src='${f}' style='width:100%'>`;
+      });
+    }
+
+    // Like button
+    const likeBtn = document.createElement('div');
+    likeBtn.className = 'like-btn';
+    likeBtn.innerText = `Like (${p.likes.length})`;
+    likeBtn.onclick = () => toggleLike(docSnap.id, p.likes);
+    div.appendChild(likeBtn);
+
+    // Comment section
+    const commentDiv = document.createElement('div');
+    commentDiv.className = 'comment-section';
+    commentDiv.innerHTML = `
+      <input type='text' id='commentInput_${docSnap.id}' placeholder='Write a comment...'>
+      <button onclick='addComment("${docSnap.id}")'>Comment</button>
+      ${p.comments.map(c => `<div class='comment'><strong>${c.user}:</strong> ${c.text}</div>`).join('')}
+    `;
+    div.appendChild(commentDiv);
+
+    userPostsDiv.appendChild(div);
+  });
+}
+
+async function toggleLike(postId, likes) {
+  const userEmail = currentUser.email;
+  let newLikes = likes.includes(userEmail) ? likes.filter(u => u !== userEmail) : [...likes, userEmail];
+  const docRef = collection(db, 'posts');
+  const docs = await getDocs(docRef);
+  docs.forEach(async d => { if(d.id===postId){ await d.ref.update({likes:newLikes}); loadPostsFirebase(); }});
+}
+
+async function addComment(postId) {
+  const input = document.getElementById(`commentInput_${postId}`);
+  const text = input.value.trim();
+  if (!text) return;
+  const docRef = collection(db, 'posts');
+  const docs = await getDocs(docRef);
+  docs.forEach(async d => {
+    if(d.id===postId){
+      const comments = d.data().comments || [];
+      await d.ref.update({comments:[...comments,{user:currentUser.email,text}]});
+      loadPostsFirebase();
+      input.value='';
+    }
+  });
+}
+
+const contactForm = document.getElementById('contactForm');
+const formStatus = document.getElementById('formStatus');
+contactForm.addEventListener('submit', function(e){
+  e.preventDefault();
+  const data = new FormData(contactForm);
+  fetch(contactForm.action, { method: 'POST', body: data, headers: { 'Accept': 'application/json' }})
+  .then(response=>{ if(response.ok){ formStatus.innerText='Message sent successfully!'; contactForm.reset(); } else { formStatus.innerText='Oops! There was a problem.'; }})
+  .catch(()=>{ formStatus.innerText='Oops! There was a problem.'; });
+});
+
+function toggleDarkMode(){ document.body.classList.toggle('dark-mode'); }
+</script></body>
+</html>
